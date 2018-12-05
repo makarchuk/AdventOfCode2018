@@ -10,13 +10,16 @@ fn main() {
         compressed,
         compressed.len()
     );
-    let chars: HashSet<char> = input.chars().map(|ch| ch.to_ascii_uppercase()).collect();
+    let chars: HashSet<char> = compressed
+        .chars()
+        .map(|ch| ch.to_ascii_uppercase())
+        .collect();
     println!(
         "Minimal possible len is {}",
         chars
             .iter()
             .map(|excluded| compress(
-                &input
+                &compressed
                     .chars()
                     .filter(|c| c.to_ascii_uppercase() != *excluded)
                     .collect::<String>(),
@@ -38,20 +41,21 @@ fn compress(input: &str) -> String {
 }
 
 fn wrap(input: &str) -> String {
-    let (mut result, last_ch) =
-        input
-            .chars()
-            .fold((String::new(), ' '), |(mut new_str, last_ch), ch| {
-                if ch != last_ch && ch.to_ascii_uppercase() == last_ch.to_ascii_uppercase() {
-                    (new_str, ' ')
+    let (mut result, tail) = input.chars().fold(
+        (String::new(), None),
+        |(mut new_str, previous), ch| match previous {
+            None => (new_str, Some(ch)),
+            Some(last_ch) => {
+                if last_ch.to_ascii_uppercase() == ch.to_ascii_uppercase() && last_ch != ch {
+                    (new_str, None)
                 } else {
-                    if last_ch != ' ' {
-                        new_str.push(last_ch);
-                    }
-                    (new_str, ch)
+                    new_str.push(last_ch);
+                    (new_str, Some(ch))
                 }
-            });
-    if last_ch != ' ' {
+            }
+        },
+    );
+    if let Some(last_ch) = tail {
         result.push(last_ch)
     }
     result
