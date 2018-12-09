@@ -11,10 +11,13 @@ struct Game {
 
 impl Game {
     fn new(stones: u32, players: u32) -> Self {
+        //It's a bit too much but it's simple and helps to avoid reallocations
+        let mut circle = Vec::with_capacity(stones as usize);
+        circle.push(0);
         Self {
-            circle: vec![0],
             scores: HashMap::new(),
             current: 0,
+            circle,
             stones,
             players,
         }
@@ -59,7 +62,9 @@ impl Game {
         let mut player = 0;
         for i in 1..=self.stones {
             self.step(i, player);
-            // println!("[{}] {:?}", player, self.circle);
+            if i % 10000 == 0 {
+                println!("{}: [{}] {:?}", i, player, self.circle.len());
+            }
             player = (player + 1) % self.players;
         }
     }
@@ -72,6 +77,17 @@ fn main() {
     let mut game = Game::new(chunks[6].parse().unwrap(), chunks[0].parse().unwrap());
     game.play();
 
+    println!(
+        "Top score is {}",
+        game.scores.values().max().ok_or("No max score?").unwrap()
+    );
+
+    let mut game = Game::new(
+        chunks[6].parse::<u32>().unwrap() * 100,
+        chunks[0].parse().unwrap(),
+    );
+
+    game.play();
     println!(
         "Top score is {}",
         game.scores.values().max().ok_or("No max score?").unwrap()
