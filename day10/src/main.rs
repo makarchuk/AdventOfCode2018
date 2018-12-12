@@ -48,15 +48,15 @@ impl Sky {
     }
 
     //Detect whether or not current state presents a meaningful writing
-    //to do so we will try and find horizontal line at least 5 stars long
+    //to do so we will try and find vertical line at least 8 stars long
     //(which is lazy, but I assume will work)
     fn meaningful(&self) -> bool {
         let grouped_coordinates = self.stars.iter().fold::<HashMap<i128, Vec<i128>>, _>(
             HashMap::new(),
             |mut map, star| {
                 {
-                    let entry = map.entry(star.y).or_insert(vec![]);
-                    entry.push(star.x);
+                    let entry = map.entry(star.x).or_insert(vec![]);
+                    entry.push(star.y);
                     entry.sort_unstable();
                 }
                 map
@@ -64,22 +64,22 @@ impl Sky {
         );
         let consecutives = grouped_coordinates
             .values()
-            .map(|xs| {
-                xs.iter().fold(
+            .map(|ys| {
+                ys.iter().fold(
                     (None, 1, 0),
-                    |(previous, current_max, consecutive), xval| match previous {
-                        None => (Some(xval), current_max, 1),
-                        Some(previous_x) => {
-                            if *previous_x == *xval {
-                                (Some(xval), current_max, consecutive)
-                            } else if *previous_x == xval - 1 {
+                    |(previous, current_max, consecutive), yval| match previous {
+                        None => (Some(yval), current_max, 1),
+                        Some(previous_y) => {
+                            if *previous_y == *yval {
+                                (Some(yval), current_max, consecutive)
+                            } else if *previous_y == yval - 1 {
                                 if consecutive + 1 >= current_max {
-                                    (Some(xval), consecutive + 1, consecutive + 1)
+                                    (Some(yval), consecutive + 1, consecutive + 1)
                                 } else {
-                                    (Some(xval), current_max, consecutive + 1)
+                                    (Some(yval), current_max, consecutive + 1)
                                 }
                             } else {
-                                (Some(xval), current_max, 1)
+                                (Some(yval), current_max, 1)
                             }
                         }
                     },
@@ -88,11 +88,7 @@ impl Sky {
             .max()
             .ok_or("This collection should not be empty!")
             .unwrap();
-        // if consecutives >= 4 {
-        //     println!("Grouped: {:?}", grouped_coordinates);
-        //     println!("Max: {}", consecutives);
-        // }
-        consecutives >= 5
+        consecutives >= 8
     }
 
     //Tuple of ((minx, maxx, miny, maxy))
