@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::io::{self, Read};
 
+#[derive(Clone)]
 struct Map {
     carts: Vec<Cart>,
     rails: Vec<Vec<Cell>>,
@@ -63,6 +64,7 @@ impl Map {
                         '+' => Cell::Intersection(),
                         'v' => {
                             carts.push(Cart {
+                                crashed: false,
                                 id: carts.len(),
                                 direction: Direction::Down(),
                                 location: Location { x, y },
@@ -72,6 +74,7 @@ impl Map {
                         }
                         '^' => {
                             carts.push(Cart {
+                                crashed: false,
                                 id: carts.len(),
                                 direction: Direction::Up(),
                                 location: Location { x, y },
@@ -81,6 +84,7 @@ impl Map {
                         }
                         '>' => {
                             carts.push(Cart {
+                                crashed: false,
                                 id: carts.len(),
                                 direction: Direction::Right(),
                                 location: Location { x, y },
@@ -90,6 +94,7 @@ impl Map {
                         }
                         '<' => {
                             carts.push(Cart {
+                                crashed: false,
                                 id: carts.len(),
                                 direction: Direction::Left(),
                                 location: Location { x, y },
@@ -116,15 +121,19 @@ impl Map {
     fn tick(&self) -> (Self, Option<Vec<Location>>) {
         let mut carts = self.ordered_carts().clone();
         let mut collisions = None;
+        let mut targets = vec![];
         for (i, cart) in carts.clone().iter().enumerate() {
-            let new_state_cart = cart.tick(self);
+            let mut new_state_cart = cart.tick(self);
             match carts
                 .iter()
-                .filter(|c| c.location == new_state_cart.location)
+                .enumerate()
+                .filter(|(_, c)| c.location == new_state_cart.location)
                 .next()
             {
                 None => (),
-                Some(c) => {
+                Some((j, c)) => {
+                    targets.push(j);
+                    new_state_cart.crashed = true;
                     collisions = {
                         match collisions {
                             None => Some(vec![c.location.clone()]),
@@ -138,7 +147,9 @@ impl Map {
             }
             carts[i] = new_state_cart
         }
-
+        for i in targets {
+            carts[i].crashed = true
+        }
         (
             Map {
                 rails: self.rails.clone(),
@@ -170,6 +181,7 @@ impl Map {
 #[derive(Clone, Debug)]
 struct Cart {
     id: usize,
+    crashed: bool,
     controller: Controller,
     location: Location,
     direction: Direction,
@@ -373,13 +385,36 @@ fn main() {
     loop {
         let (new_map, collisions) = map.tick();
         match collisions {
-            None => (),
+            None => map = new_map,
             Some(locs) => {
                 println!("Collision at {},{} at step #{}", locs[0].x, locs[0].y, step);
-                break;
+                let new_carts = new_map
+                    .carts
+                    .iter()
+                    .filter(|c| !c.crashed)
+                    .map(|c| c.clone())
+                    .collect::<Vec<_>>();
+                if new_carts.len() == 1 {
+                    let cart_id = new_carts[0].id;
+                    let last_cart_location = new_carts
+                        .iter()
+                        .filter(|c| c.id == cart_id)
+                        .next()
+                        .unwrap()
+                        .location
+                        .clone();
+                    println!(
+                        "Last cart is: {},{}",
+                        last_cart_location.x, last_cart_location.y
+                    );
+                    break;
+                }
+                map = new_map;
+                map.carts = new_carts;
+                println!("Carts: {}", map.carts.len());
             }
         }
-        map = new_map;
+
         step += 1;
     }
 }
