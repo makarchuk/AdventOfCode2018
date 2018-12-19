@@ -1,20 +1,163 @@
 use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
+use std::collections::HashSet;
+use std::fmt;
+use std::io::{self, Read};
 
 struct Map {
     carts: Vec<Cart>,
     rails: Vec<Vec<Cell>>,
 }
 
-impl Map {
-    fn tick(&self) -> Self {
-        Map {
-            rails: self.rails.clone(),
-            carts: self
-                .ordered_carts()
-                .iter()
-                .map(|c| c.tick(&self.rails))
-                .collect(),
+impl fmt::Display for Map {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (y, row) in self.rails.iter().enumerate() {
+            for (x, cell) in row.iter().enumerate() {
+                match self
+                    .carts
+                    .iter()
+                    .filter(|c| c.location == Location { x, y })
+                    .next()
+                {
+                    Some(c) => f.write_str(match c.direction {
+                        Direction::Right() => ">",
+                        Direction::Left() => "<",
+                        Direction::Up() => "^",
+                        Direction::Down() => "v",
+                    })?,
+                    None => f.write_str(match cell {
+                        Cell::NoRails() => " ",
+                        Cell::BackwardsTurn() => "\\",
+                        Cell::Turn() => "/",
+                        Cell::Vertical() => "|",
+                        Cell::Horizontal() => "-",
+                        Cell::Intersection() => "+",
+                    })?,
+                }
+            }
+            f.write_str("\n")?
         }
+        Ok(())
+    }
+}
+
+impl Map {
+    fn from_str(input: &str) -> Self {
+        let mut carts = vec![];
+        let max_len = input
+            .split("\n")
+            .map(|l| l.len())
+            .max()
+            .expect("No lines in input");
+        let rails = input
+            .split("\n")
+            .enumerate()
+            .map(|(y, s)| {
+                let mut row = s
+                    .chars()
+                    .enumerate()
+                    .map(|(x, c)| match c {
+                        '-' => Cell::Horizontal(),
+                        '|' => Cell::Vertical(),
+                        '/' => Cell::Turn(),
+                        '\\' => Cell::BackwardsTurn(),
+                        '+' => Cell::Intersection(),
+                        'v' => {
+                            carts.push(Cart {
+                                id: carts.len(),
+                                direction: Direction::Down(),
+                                location: Location { x, y },
+                                controller: Controller::new(),
+                            });
+                            Cell::Vertical()
+                        }
+                        '^' => {
+                            carts.push(Cart {
+                                id: carts.len(),
+                                direction: Direction::Up(),
+                                location: Location { x, y },
+                                controller: Controller::new(),
+                            });
+                            Cell::Vertical()
+                        }
+                        '>' => {
+                            carts.push(Cart {
+                                id: carts.len(),
+                                direction: Direction::Right(),
+                                location: Location { x, y },
+                                controller: Controller::new(),
+                            });
+                            Cell::Horizontal()
+                        }
+                        '<' => {
+                            carts.push(Cart {
+                                id: carts.len(),
+                                direction: Direction::Left(),
+                                location: Location { x, y },
+                                controller: Controller::new(),
+                            });
+                            Cell::Horizontal()
+                        }
+                        ' ' => Cell::NoRails(),
+                        _ => panic!("Unknown char"),
+                    })
+                    .collect::<Vec<_>>();
+                row.resize(max_len, Cell::NoRails());
+                row
+            })
+            .collect();
+
+        Self { rails, carts }
+    }
+
+    fn get(&self, loc: &Location) -> Cell {
+        self.rails[loc.y][loc.x].clone()
+    }
+
+    fn tick(&self) -> (Self, Option<Vec<Location>>) {
+        let mut carts = self.ordered_carts().clone();
+        let mut collisions = None;
+        for (i, cart) in carts.clone().iter().enumerate() {
+            let new_state_cart = cart.tick(self);
+            match carts
+                .iter()
+                .filter(|c| c.location == new_state_cart.location)
+                .next()
+            {
+                None => (),
+                Some(c) => {
+                    collisions = {
+                        match collisions {
+                            None => Some(vec![c.location.clone()]),
+                            Some(mut locs) => {
+                                locs.push(c.location.clone());
+                                Some(locs)
+                            }
+                        }
+                    }
+                }
+            }
+            carts[i] = new_state_cart
+        }
+
+        (
+            Map {
+                rails: self.rails.clone(),
+                carts: carts,
+            },
+            collisions,
+        )
+    }
+
+    fn check_collisions(&self) -> Option<Location> {
+        let mut hs = HashSet::new();
+        for cart in self.ordered_carts().iter() {
+            if hs.contains(&(cart.location.x, cart.location.y)) {
+                return Some(cart.location.clone());
+            } else {
+                hs.insert((cart.location.x, cart.location.y).clone());
+            }
+        }
+        None
     }
 
     fn ordered_carts(&self) -> Vec<Cart> {
@@ -24,25 +167,29 @@ impl Map {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Cart {
+    id: usize,
     controller: Controller,
     location: Location,
     direction: Direction,
 }
 
 impl Cart {
-    fn tick(&self, rails: &Vec<Vec<Cell>>) -> Self {
+    fn tick(&self, map: &Map) -> Self {
         let mut clone = self.clone();
         let new_location = clone.direction.tick(&clone.location);
-        let new_direction = rails[clone.location.x][clone.location.y].new_direction(&mut clone);
+        if new_location == clone.location {
+            panic!("We should move!");
+        }
+        let new_direction = map.get(&new_location).new_direction(&mut clone);
         clone.location = new_location;
         clone.direction = new_direction;
         clone
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Location {
     x: usize,
     y: usize,
@@ -74,9 +221,39 @@ impl PartialEq for Location {
 
 impl Eq for Location {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Controller {
     last: Option<Turn>,
+}
+
+impl Controller {
+    fn new() -> Self {
+        Self { last: None }
+    }
+}
+
+#[test]
+fn test_controller() {
+    let mut c = Controller { last: None };
+    let mut results = vec![];
+    for _ in 0..10 {
+        results.push(c.next().unwrap())
+    }
+    assert_eq!(
+        results,
+        vec![
+            Turn::Left(),
+            Turn::Straight(),
+            Turn::Right(),
+            Turn::Left(),
+            Turn::Straight(),
+            Turn::Right(),
+            Turn::Left(),
+            Turn::Straight(),
+            Turn::Right(),
+            Turn::Left()
+        ]
+    )
 }
 
 impl Iterator for Controller {
@@ -94,7 +271,7 @@ impl Iterator for Controller {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 enum Turn {
     Left(),
     Right(),
@@ -113,15 +290,15 @@ impl Turn {
             },
             Turn::Right() => match dir {
                 Direction::Left() => Direction::Up(),
-                Direction::Down() => Direction::Left(),
-                Direction::Right() => Direction::Down(),
                 Direction::Up() => Direction::Right(),
+                Direction::Right() => Direction::Down(),
+                Direction::Down() => Direction::Left(),
             },
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Direction {
     Left(),
     Right(),
@@ -134,24 +311,24 @@ impl Direction {
         match self {
             Direction::Up() => Location {
                 y: loc.y - 1,
-                ..*loc
+                x: loc.x,
             },
             Direction::Down() => Location {
                 y: loc.y + 1,
-                ..*loc
+                x: loc.x,
             },
             Direction::Left() => Location {
                 x: loc.x - 1,
-                ..*loc
+                y: loc.y,
             },
             Direction::Right() => Location {
                 x: loc.x + 1,
-                ..*loc
+                y: loc.y,
             },
         }
     }
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Cell {
     Vertical(),
     Horizontal(),
@@ -189,5 +366,20 @@ impl Cell {
 }
 
 fn main() {
-    println!("Hello, world!");
+    let mut input = String::new();
+    io::stdin().read_to_string(&mut input).unwrap();
+    let mut map = Map::from_str(&input);
+    let mut step = 0;
+    loop {
+        let (new_map, collisions) = map.tick();
+        match collisions {
+            None => (),
+            Some(locs) => {
+                println!("Collision at {},{} at step #{}", locs[0].x, locs[0].y, step);
+                break;
+            }
+        }
+        map = new_map;
+        step += 1;
+    }
 }
